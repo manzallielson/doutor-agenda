@@ -24,32 +24,27 @@ export const POST = async (request: Request) => {
   );
 
   switch (event.type) {
-    case "invoice.paid": {
-      if (!event.data.object.id) {
-        throw new Error("Subscription ID not found");
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      
+      if (!session.subscription || !session.customer) {
+        throw new Error("Subscription or customer not found");
       }
-      const { subscription, subscription_details, customer } = event.data
-        .object as unknown as {
-        customer: string;
-        subscription: string;
-        subscription_details: {
-          metadata: {
-            userId: string;
-          };
-        };
-      };
-      if (!subscription) {
-        throw new Error("Subscription not found");
-      }
-      const userId = subscription_details.metadata.userId;
+
+      const subscription = await stripe.subscriptions.retrieve(
+        session.subscription as string
+      );
+
+      const userId = subscription.metadata.userId;
       if (!userId) {
         throw new Error("User ID not found");
       }
+
       await db
         .update(usersTable)
         .set({
-          stripeSubscriptionId: subscription,
-          stripeCustomerId: customer,
+          stripeSubscriptionId: subscription.id,
+          stripeCustomerId: session.customer as string,
           plan: "essential",
         })
         .where(eq(usersTable.id, userId));
